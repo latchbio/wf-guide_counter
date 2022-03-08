@@ -33,9 +33,9 @@ def guide_counter_task(
     subprocess.run(_guide_counter_cmd)
 
     return (
-        LatchFile(str(counts), f"latch:///{counts}"),
-        LatchFile(str(extended_counts), f"latch:///{extended_counts}"),
-        LatchFile(str(stats), f"latch:///{stats}"),
+        LatchFile(str(counts), f"latch://{counts}"),
+        LatchFile(str(extended_counts), f"latch://{extended_counts}"),
+        LatchFile(str(stats), f"latch://{stats}"),
     )
 
 
