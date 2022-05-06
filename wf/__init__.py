@@ -79,6 +79,6 @@ def guide_counter_wf(
           The name of the output files.
 
           __metadata__:
-            display_name:
+            display_name: Output Name
     """
     return guide_counter_task(reads=reads, output_name=output_name)
