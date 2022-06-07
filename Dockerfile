@@ -5,6 +5,7 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 COPY data/brunello.csv /root/brunello.csv
 
 RUN cargo install guide-counter
+RUN python3 -m pip install cutadapt
 
 # STOP HERE:
 # The following lines are needed to ensure your build environement works

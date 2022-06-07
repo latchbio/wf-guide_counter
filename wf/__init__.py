@@ -5,11 +5,60 @@ Latch wrapper of Fulcrom Genomics' Guide-Counter.
 import subprocess
 from pathlib import Path
 
+from flytekit import task
+from flytekitplugins.pod import Pod
+from kubernetes.client.models import (V1Container, V1PodSpec,
+                                      V1ResourceRequirements, V1Toleration)
 from latch import small_task, workflow
 from latch.types import LatchFile
 
 
-@small_task
+def _get_96_spot_pod() -> Pod:
+    """[ "c6i.24xlarge", "c5.24xlarge", "c5.metal", "c5d.24xlarge", "c5d.metal" ]"""
+
+    primary_container = V1Container(name="primary")
+    resources = V1ResourceRequirements(
+        requests={"cpu": "90", "memory": "170Gi"},
+        limits={"cpu": "96", "memory": "192Gi"},
+    )
+    primary_container.resources = resources
+
+    return Pod(
+        pod_spec=V1PodSpec(
+            containers=[primary_container],
+            tolerations=[
+                V1Toleration(effect="NoSchedule", key="ng", value="cpu-96-spot")
+            ],
+        ),
+        primary_container_name="primary",
+    )
+
+
+large_spot_task = task(task_config=_get_96_spot_pod())
+
+
+@large_spot_task
+def trim_primers(
+    reads: LatchFile,
+    primer_seq: str,
+) -> LatchFile:
+
+    _cutadapt_cmd = [
+        "cutadapt",
+        "-j",
+        "96",
+        "-g",
+        str(primer_seq),
+        "-o",
+        "/root/output.fastq.gz",
+        reads.local_path,
+    ]
+    subprocess.run(_cutadapt_cmd)
+
+    return LatchFile("/root/output.fastq.gz", "latch:///output.fastq.gz")
+
+
+@large_spot_task
 def guide_counter_task(
     reads: LatchFile,
     output_name: str,
@@ -42,6 +91,7 @@ def guide_counter_task(
 @workflow
 def guide_counter_wf(
     reads: LatchFile,
+    primer_seq: str,
     output_name: str,
 ) -> (LatchFile, LatchFile, LatchFile):
     """A better, faster way to count guides in CRISPR screens.
@@ -75,10 +125,17 @@ def guide_counter_wf(
           __metadata__:
             display_name: Reads File
 
+        primer_seq:
+          Nucleotide sequence of primers to trim from library sequencing reads.
+
+          __metadata__:
+            display_name: Primer Sequence (for trimmming)
+
         output_name:
           The name of the output files.
 
           __metadata__:
             display_name: Output Name
     """
-    return guide_counter_task(reads=reads, output_name=output_name)
+    trimmed_reads = trim_primers(reads=reads, primer_seq=primer_seq)
+    return guide_counter_task(reads=trimmed_reads, output_name=output_name)
