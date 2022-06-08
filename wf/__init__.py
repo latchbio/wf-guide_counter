@@ -3,14 +3,20 @@ Latch wrapper of Fulcrom Genomics' Guide-Counter.
 """
 
 import subprocess
+from enum import Enum
 from pathlib import Path
 
 from flytekit import task
 from flytekitplugins.pod import Pod
 from kubernetes.client.models import (V1Container, V1PodSpec,
                                       V1ResourceRequirements, V1Toleration)
-from latch import small_task, workflow
+from latch import workflow
 from latch.types import LatchFile
+
+
+class LibraryType(Enum):
+    brunello = "brunello"
+    brie = "brie"
 
 
 def _get_96_spot_pod() -> Pod:
@@ -38,10 +44,12 @@ large_spot_task = task(task_config=_get_96_spot_pod())
 
 
 @large_spot_task
-def trim_primers(
+def guide_counter_task(
     reads: LatchFile,
+    output_name: str,
     primer_seq: str,
-) -> LatchFile:
+    library_type: LibraryType = LibraryType.brunello,
+) -> (LatchFile, LatchFile, LatchFile):
 
     _cutadapt_cmd = [
         "cutadapt",
@@ -55,22 +63,13 @@ def trim_primers(
     ]
     subprocess.run(_cutadapt_cmd)
 
-    return LatchFile("/root/output.fastq.gz", "latch:///output.fastq.gz")
-
-
-@large_spot_task
-def guide_counter_task(
-    reads: LatchFile,
-    output_name: str,
-) -> (LatchFile, LatchFile, LatchFile):
-
     _guide_counter_cmd = [
         "guide-counter",
         "count",
         "--input",
-        str(Path(reads).resolve()),
+        "/root/output.fastq.gz",
         "--library",
-        "/root/brunello.csv",
+        f"/root/{library_type.value}.csv",
         "--output",
         output_name,
     ]
@@ -92,7 +91,8 @@ def guide_counter_task(
 def guide_counter_wf(
     reads: LatchFile,
     primer_seq: str,
-    output_name: str,
+    library_type: LibraryType = LibraryType.brunello,
+    output_name: str = "myrun",
 ) -> (LatchFile, LatchFile, LatchFile):
     """A better, faster way to count guides in CRISPR screens.
 
@@ -131,11 +131,21 @@ def guide_counter_wf(
           __metadata__:
             display_name: Primer Sequence (for trimmming)
 
+        library_type:
+          The library type to count guides against.
+
+          __metadata__:
+            display_name: Library Type
+
         output_name:
           The name of the output files.
 
           __metadata__:
             display_name: Output Name
     """
-    trimmed_reads = trim_primers(reads=reads, primer_seq=primer_seq)
-    return guide_counter_task(reads=trimmed_reads, output_name=output_name)
+    return guide_counter_task(
+        reads=reads,
+        primer_seq=primer_seq,
+        output_name=output_name,
+        library_type=library_type,
+    )
